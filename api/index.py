@@ -1,26 +1,43 @@
 import os
 import json
 import re
-from typing import List, Optional
+import logging
+from typing import List, Tuple, Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# استدعاء آمن لمكتبات الذكاء الاصطناعي لتفادي أخطاء البناء
+# ------------------------------------------------------------------------------
+# Logging Setup
+# ------------------------------------------------------------------------------
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger("e-marketing-ai")
+
+# ------------------------------------------------------------------------------
+# Safe Dynamic Imports for AI Providers
+# ------------------------------------------------------------------------------
 try:
     import groq
 except ImportError:
     groq = None
+    logger.warning("Groq SDK is not installed.")
 
 try:
     import google.generativeai as genai
 except ImportError:
     genai = None
+    logger.warning("Google Generative AI SDK is not installed.")
 
-# إنشاء تطبيق FastAPI
-app = FastAPI(title="e-MarketingReviews AI Engine", version="1.0.0")
+# ------------------------------------------------------------------------------
+# FastAPI Application Initialization
+# ------------------------------------------------------------------------------
+app = FastAPI(
+    title="e-MarketingReviews AI Engine",
+    description="Production-grade AI Assistant API with automated model failover and RAG context extraction.",
+    version="2.0.0"
+)
 
-# إعداد حماية CORS
+# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,9 +46,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# نماذج البيانات
+# ------------------------------------------------------------------------------
+# Data Schemas
+# ------------------------------------------------------------------------------
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, description="User query message")
 
 class ArticleSource(BaseModel):
     title: str
@@ -41,110 +60,179 @@ class ChatResponse(BaseModel):
     reply: str
     sources: List[ArticleSource]
 
-# تحميل الذاكرة وقاعدة البيانات
+# ------------------------------------------------------------------------------
+# Global Memory Cache & RAG Search Logic
+# ------------------------------------------------------------------------------
 KNOWLEDGE_BASE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "knowledge_base.json")
+_knowledge_cache: Optional[List[Dict[str, Any]]] = None
 
-def load_knowledge_base():
-    if os.path.exists(KNOWLEDGE_BASE_PATH):
-        try:
-            with open(KNOWLEDGE_BASE_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
+def load_knowledge_base() -> List[Dict[str, Any]]:
+    """Loads and caches the knowledge base in memory across warm serverless invocations."""
+    global _knowledge_cache
+    if _knowledge_cache is not None:
+        return _knowledge_cache
+
+    possible_paths = [
+        KNOWLEDGE_BASE_PATH,
+        os.path.join(os.getcwd(), "data", "knowledge_base.json"),
+        os.path.join(os.path.dirname(__file__), "knowledge_base.json")
+    ]
+
+    for path in possible_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    _knowledge_cache = json.load(f)
+                    logger.info(f"Successfully loaded {len(_knowledge_cache)} articles from {path}")
+                    return _knowledge_cache
+            except Exception as e:
+                logger.error(f"Error reading knowledge base at {path}: {e}")
+
+    logger.warning("Knowledge base JSON file not found or failed to load.")
     return []
 
-def search_relevant_context(query: str, articles: list, top_k: int = 3) -> list:
+STOP_WORDS = {"the", "a", "an", "is", "are", "and", "or", "in", "on", "at", "to", "for", "of", "with", "about", "what", "how", "which"}
+
+def search_relevant_context(query: str, articles: List[Dict[str, Any]], top_k: int = 3) -> List[Dict[str, Any]]:
+    """Enhanced keyword-matching algorithm with title weight boosting and stop-word filtering."""
     if not articles:
         return []
-    
-    query_words = set(re.findall(r'\w+', query.lower()))
+
+    tokens = [w.lower() for w in re.findall(r'\b\w+\b', query) if len(w) > 2 and w.lower() not in STOP_WORDS]
+    if not tokens:
+        tokens = [w.lower() for w in re.findall(r'\b\w+\b', query) if len(w) > 1]
+
     scored_articles = []
-    
     for art in articles:
         title = art.get("title", "")
         content = art.get("content", "")
-        combined_text = f"{title} {content}".lower()
-        
+        title_lower = title.lower()
+        content_lower = content.lower()
+
         score = 0
-        for word in query_words:
-            if len(word) > 2:
-                score += combined_text.count(word)
-                if word in title.lower():
-                    score += 5
-                    
+        for token in tokens:
+            if token in title_lower:
+                score += 10 + (title_lower.count(token) * 3)
+            if token in content_lower:
+                score += content_lower.count(token)
+
         if score > 0:
             scored_articles.append((score, art))
-            
+
     scored_articles.sort(key=lambda x: x[0], reverse=True)
-    return [art for score, art in scored_articles[:top_k]]
+    return [art for _, art in scored_articles[:top_k]]
 
-def generate_ai_response(user_query: str, context_articles: list):
+# ------------------------------------------------------------------------------
+# Core AI Generation Engine with Automatic Fallback Matrix
+# ------------------------------------------------------------------------------
+GROQ_MODEL_FALLBACKS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-70b-8192",
+    "mixtral-8x7b-32768"
+]
+
+GEMINI_MODEL_FALLBACKS = [
+    "gemini-1.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro"
+]
+
+def generate_ai_response(user_query: str, context_articles: List[Dict[str, Any]]) -> Tuple[str, List[ArticleSource]]:
+    """Executes AI generation across Groq and Gemini with multi-model fallback strategy."""
     context_text = ""
-    sources = []
-    
+    sources: List[ArticleSource] = []
+
     if context_articles:
-        context_text = "\n\n".join([
-            f"Article: {art['title']}\nURL: {art['url']}\nContent: {art['content'][:1500]}..."
-            for art in context_articles
-        ])
+        formatted_blocks = []
         for art in context_articles:
-            sources.append(ArticleSource(title=art['title'], url=art['url']))
-            
-    system_prompt = f"""You are the official AI assistant for e-MarketingReviews (specialized in digital marketing, AI tools, and software reviews).
-Respond professionally and concisely in English.
+            title = art.get("title", "Untitled")
+            url = art.get("url", "#")
+            snippet = art.get("content", "")[:1200]
+            formatted_blocks.append(f"Title: {title}\nURL: {url}\nContent Snippet: {snippet}...")
+            sources.append(ArticleSource(title=title, url=url))
+        context_text = "\n\n".join(formatted_blocks)
 
-Context from website:
+    system_prompt = f"""You are the official AI Assistant for e-MarketingReviews (https://www.e-marketingreviews.com), a platform dedicated to digital marketing, AI tools, and software reviews.
+
+RULES:
+1. Provide accurate, clear, and professional answers exclusively in English.
+2. Utilize the context provided below to give tailored recommendations.
+3. Keep answers well-structured using short paragraphs and bullet points when necessary.
+4. If the provided context does not contain direct information, draw upon general digital marketing knowledge while inviting the user to explore the website.
+
+Relevant Website Context:
 ---
-{context_text if context_text else "No specific context available."}
----
-"""
+{context_text if context_text else "No direct article match found."}
+---"""
 
-    groq_api_key = os.getenv("GROQ_API_KEY")
-    gemini_api_key = os.getenv("GEMINI_API_KEY")
-
+    groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+    gemini_api_key = os.getenv("GEMINI_API_KEY", "").strip()
     errors = []
 
-    # 1. تجربة Groq
+    # 1. Attempt Groq Provider
     if groq_api_key and groq is not None:
         try:
-            client = groq.Groq(api_key=groq_api_key.strip())
-            completion = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_query}
-                ],
-                temperature=0.6,
-                max_tokens=1000,
-            )
-            return completion.choices[0].message.content, sources
+            client = groq.Groq(api_key=groq_api_key)
+            for model in GROQ_MODEL_FALLBACKS:
+                try:
+                    completion = client.chat.completions.create(
+                        model=model,
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_query}
+                        ],
+                        temperature=0.5,
+                        max_tokens=1000,
+                    )
+                    logger.info(f"Successfully generated response using Groq model: {model}")
+                    return completion.choices[0].message.content, sources
+                except Exception as e:
+                    err_msg = f"Groq ({model}): {str(e)}"
+                    logger.warning(err_msg)
+                    errors.append(err_msg)
         except Exception as e:
-            errors.append(f"Groq Error: {str(e)}")
+            logger.error(f"Groq Initialization Error: {e}")
 
-    # 2. تجربة Gemini
+    # 2. Attempt Gemini Provider
     if gemini_api_key and genai is not None:
         try:
-            genai.configure(api_key=gemini_api_key.strip())
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(f"{system_prompt}\n\nUser Question: {user_query}")
-            return response.text, sources
+            genai.configure(api_key=gemini_api_key)
+            for model_name in GEMINI_MODEL_FALLBACKS:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(f"{system_prompt}\n\nUser Query: {user_query}")
+                    logger.info(f"Successfully generated response using Gemini model: {model_name}")
+                    return response.text, sources
+                except Exception as e:
+                    err_msg = f"Gemini ({model_name}): {str(e)}"
+                    logger.warning(err_msg)
+                    errors.append(err_msg)
         except Exception as e:
-            errors.append(f"Gemini Error: {str(e)}")
+            logger.error(f"Gemini Initialization Error: {e}")
 
     if not groq_api_key and not gemini_api_key:
-        return "Error: API Keys (GROQ_API_KEY / GEMINI_API_KEY) are missing in Vercel Environment Variables.", []
+        return "System Configuration Error: Neither GROQ_API_KEY nor GEMINI_API_KEY environment variables are configured.", []
 
-    return f"API Exception: {' | '.join(errors)}", []
+    return f"Service Temporarily Unavailable. Provider Errors: {' | '.join(errors)}", []
 
-# Endpoints
+# ------------------------------------------------------------------------------
+# Route Endpoints
+# ------------------------------------------------------------------------------
 @app.get("/")
 @app.get("/api")
-def read_root():
-    return {"status": "online", "message": "e-MarketingReviews AI API is running!"}
+def root_status():
+    return {
+        "status": "online",
+        "service": "e-MarketingReviews AI Engine",
+        "version": "2.0.0"
+    }
 
 @app.get("/widget.js")
 @app.get("/public/widget.js")
 def serve_widget():
+    """Serves widget.js statically with caching headers."""
     possible_paths = [
         os.path.join(os.path.dirname(__file__), "widget.js"),
         os.path.join(os.path.dirname(__file__), "..", "public", "widget.js"),
@@ -154,17 +242,32 @@ def serve_widget():
     for path in possible_paths:
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
-                return Response(content=f.read(), media_type="application/javascript")
-    raise HTTPException(status_code=404, detail="Widget file not found")
+                return Response(
+                    content=f.read(),
+                    media_type="application/javascript",
+                    headers={"Cache-Control": "public, max-age=3600"}
+                )
+    raise HTTPException(status_code=404, detail="Widget file not found.")
+
+@app.get("/chat")
+@app.get("/api/chat")
+def chat_get_info():
+    return {
+        "status": "active",
+        "endpoint": "/api/chat",
+        "method": "POST",
+        "payload_format": {"message": "string"}
+    }
 
 @app.post("/chat", response_model=ChatResponse)
 @app.post("/api/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
-    if not request.message.strip():
-        raise HTTPException(status_code=400, detail="Message is empty")
-        
+    user_msg = request.message.strip()
+    if not user_msg:
+        raise HTTPException(status_code=400, detail="Message string cannot be empty.")
+
     knowledge_base = load_knowledge_base()
-    relevant_articles = search_relevant_context(request.message, knowledge_base)
-    reply, sources = generate_ai_response(request.message, relevant_articles)
-    
+    relevant_articles = search_relevant_context(user_msg, knowledge_base)
+    reply, sources = generate_ai_response(user_msg, relevant_articles)
+
     return ChatResponse(reply=reply, sources=sources)
