@@ -2,7 +2,7 @@ import os
 import json
 import re
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import groq
@@ -137,11 +137,27 @@ def generate_ai_response(user_query: str, context_articles: list) -> tuple[str, 
 
     return "عذراً، لم أتمكن من الاتصال بمحرك الذكاء الاصطناعي حالياً. يرجى التأكد من ضبط مفاتيح الـ API.", []
 
-# Endpoints
+# ==========================================
+# Endpoints - المسارات المتعددة والمحدثة لـ Vercel
+# ==========================================
+
 @app.get("/")
+@app.get("/api")
 def read_root():
     return {"status": "online", "message": "e-MarketingReviews AI API is running!"}
 
+@app.get("/widget.js")
+@app.get("/public/widget.js")
+def serve_widget():
+    """تقديم ملف widget.js مباشرة لعرض شباك الدردشة في الموقع"""
+    widget_path = os.path.join(os.path.dirname(__file__), "..", "public", "widget.js")
+    if os.path.exists(widget_path):
+        with open(widget_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return Response(content=content, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="Widget file not found")
+
+@app.post("/chat", response_model=ChatResponse)
 @app.post("/api/chat", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
     if not request.message.strip():
