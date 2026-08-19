@@ -34,7 +34,7 @@ except ImportError:
 app = FastAPI(
     title="e-MarketingReviews AI Engine",
     description="Production-grade AI Assistant API with automated model failover and RAG context extraction.",
-    version="2.0.0"
+    version="2.1.0"
 )
 
 # CORS Configuration
@@ -126,22 +126,17 @@ def search_relevant_context(query: str, articles: List[Dict[str, Any]], top_k: i
 # Core AI Generation Engine with Active Updated Models
 # ------------------------------------------------------------------------------
 GROQ_MODEL_FALLBACKS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "llama-3.2-3b-preview",
-    "llama-3.2-1b-preview",
-    "qwen-2.5-coder-32b",
-    "deepseek-r1-distill-llama-70b"
+    "llama-3.3-70b-specdec",
+    "gemma2-9b-it",
+    "deepseek-r1-distill-qwen-32b",
+    "llama-3.1-8b-instant"
 ]
 
 GEMINI_MODEL_FALLBACKS = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro",
-    "models/gemini-2.5-flash",
-    "models/gemini-2.0-flash",
-    "models/gemini-1.5-flash"
+    "gemini-3.6-flash",
+    "gemini-3.0-flash",
+    "models/gemini-3.6-flash",
+    "models/gemini-3.0-flash"
 ]
 
 def generate_ai_response(user_query: str, context_articles: List[Dict[str, Any]]) -> Tuple[str, List[ArticleSource]]:
@@ -231,7 +226,7 @@ def root_status():
     return {
         "status": "online",
         "service": "e-MarketingReviews AI Engine",
-        "version": "2.0.0"
+        "version": "2.1.0"
     }
 
 @app.get("/widget.js")
