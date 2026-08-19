@@ -34,7 +34,7 @@ except ImportError:
 app = FastAPI(
     title="e-MarketingReviews AI Engine",
     description="Production-grade AI Assistant API with automated model failover and RAG context extraction.",
-    version="2.1.0"
+    version="2.2.0"
 )
 
 # CORS Configuration
@@ -133,10 +133,10 @@ GROQ_MODEL_FALLBACKS = [
 ]
 
 GEMINI_MODEL_FALLBACKS = [
-    "gemini-3.6-flash",
-    "gemini-3.0-flash",
-    "models/gemini-3.6-flash",
-    "models/gemini-3.0-flash"
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
 ]
 
 def generate_ai_response(user_query: str, context_articles: List[Dict[str, Any]]) -> Tuple[str, List[ArticleSource]]:
@@ -222,11 +222,12 @@ Relevant Website Context:
 # ------------------------------------------------------------------------------
 @app.get("/")
 @app.get("/api")
+@app.get("/api/")
 def root_status():
     return {
         "status": "online",
         "service": "e-MarketingReviews AI Engine",
-        "version": "2.1.0"
+        "version": "2.2.0"
     }
 
 @app.get("/widget.js")
@@ -249,18 +250,23 @@ def serve_widget():
                 )
     raise HTTPException(status_code=404, detail="Widget file not found.")
 
+# معالجة طلبات GET لصفحة الـ Chat عند فتح الرابط بالمتصفح المباشر
 @app.get("/chat")
 @app.get("/api/chat")
+@app.get("/chat/")
+@app.get("/api/chat/")
 def chat_get_info():
     return {
-        "status": "active",
-        "endpoint": "/api/chat",
-        "method": "POST",
-        "payload_format": {"message": "string"}
+        "status": "online",
+        "message": "Chat endpoint is active. Please send a POST request with a JSON payload {'message': 'your query'} to send messages.",
+        "endpoint": "/api/chat"
     }
 
+# استقبال طلبات POST من الشات بوت
 @app.post("/chat", response_model=ChatResponse)
 @app.post("/api/chat", response_model=ChatResponse)
+@app.post("/chat/", response_model=ChatResponse)
+@app.post("/api/chat/", response_model=ChatResponse)
 def chat_endpoint(request: ChatRequest):
     user_msg = request.message.strip()
     if not user_msg:
