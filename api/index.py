@@ -123,20 +123,25 @@ def search_relevant_context(query: str, articles: List[Dict[str, Any]], top_k: i
     return [art for _, art in scored_articles[:top_k]]
 
 # ------------------------------------------------------------------------------
-# Core AI Generation Engine with Automatic Fallback Matrix
+# Core AI Generation Engine with Active Updated Models
 # ------------------------------------------------------------------------------
 GROQ_MODEL_FALLBACKS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
-    "llama3-70b-8192",
-    "mixtral-8x7b-32768"
+    "llama-3.2-3b-preview",
+    "llama-3.2-1b-preview",
+    "qwen-2.5-coder-32b",
+    "deepseek-r1-distill-llama-70b"
 ]
 
 GEMINI_MODEL_FALLBACKS = [
-    "gemini-1.5-flash",
+    "gemini-2.5-flash",
     "gemini-2.0-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-1.5-pro"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "models/gemini-2.5-flash",
+    "models/gemini-2.0-flash",
+    "models/gemini-1.5-flash"
 ]
 
 def generate_ai_response(user_query: str, context_articles: List[Dict[str, Any]]) -> Tuple[str, List[ArticleSource]]:
