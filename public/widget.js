@@ -1,190 +1,322 @@
 (function () {
-  // 1. تحديد رابط الـ API (يتم استبداله برابط Vercel الخاص بك عند النشر)
+  // 1. Determine API Endpoint
   const API_ENDPOINT = window.EMARKETING_AI_URL || "/api/chat";
 
-  // 2. حقن ستايل CSS الخاص بالنافذة والزر العائم
+  // 2. Dynamic CSS with Auto Light/Dark Mode & Sleek Animations
   const styles = `
+    :root {
+      --ai-bg: #ffffff;
+      --ai-text-main: #0f172a;
+      --ai-text-muted: #64748b;
+      --ai-header-bg: linear-gradient(135deg, #0f172a, #1e293b);
+      --ai-header-text: #ffffff;
+      --ai-chat-bg: #f8fafc;
+      --ai-bot-msg-bg: #ffffff;
+      --ai-bot-msg-text: #1e293b;
+      --ai-bot-msg-border: #e2e8f0;
+      --ai-user-msg-bg: #2563eb;
+      --ai-user-msg-text: #ffffff;
+      --ai-input-bg: #ffffff;
+      --ai-input-border: #e2e8f0;
+      --ai-input-text: #0f172a;
+      --ai-input-focus: #2563eb;
+      --ai-shadow: 0 12px 32px -4px rgba(15, 23, 42, 0.15), 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+      --ai-radius: 16px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ai-bg: #1e293b;
+        --ai-text-main: #f8fafc;
+        --ai-text-muted: #94a3b8;
+        --ai-header-bg: linear-gradient(135deg, #0f172a, #1e293b);
+        --ai-chat-bg: #0f172a;
+        --ai-bot-msg-bg: #1e293b;
+        --ai-bot-msg-text: #f1f5f9;
+        --ai-bot-msg-border: #334155;
+        --ai-user-msg-bg: #3b82f6;
+        --ai-input-bg: #1e293b;
+        --ai-input-border: #334155;
+        --ai-input-text: #f8fafc;
+        --ai-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    /* Template Class Overrides for Theme Mode */
+    html.dark #ai-chat-widget,
+    body.dark #ai-chat-widget,
+    [data-theme="dark"] #ai-chat-widget {
+      --ai-bg: #1e293b;
+      --ai-text-main: #f8fafc;
+      --ai-text-muted: #94a3b8;
+      --ai-chat-bg: #0f172a;
+      --ai-bot-msg-bg: #1e293b;
+      --ai-bot-msg-text: #f1f5f9;
+      --ai-bot-msg-border: #334155;
+      --ai-user-msg-bg: #3b82f6;
+      --ai-input-bg: #1e293b;
+      --ai-input-border: #334155;
+      --ai-input-text: #f8fafc;
+    }
+
     #ai-chat-widget {
       position: fixed;
-      bottom: 25px;
-      right: 25px;
+      bottom: 20px;
+      left: 20px;
       z-index: 999999;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      direction: rtl;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      direction: ltr;
     }
+
     #ai-chat-button {
-      width: 60px;
-      height: 60px;
+      width: 52px;
+      height: 52px;
       border-radius: 50%;
       background: linear-gradient(135deg, #2563eb, #1d4ed8);
       color: #ffffff;
       border: none;
-      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
+      box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
+
     #ai-chat-button:hover {
-      transform: scale(1.08) rotate(5deg);
-      box-shadow: 0 12px 30px rgba(37, 99, 235, 0.5);
+      transform: scale(1.06) translateY(-2px);
+      box-shadow: 0 12px 24px rgba(37, 99, 235, 0.45);
     }
+
     #ai-chat-window {
       display: none;
       position: fixed;
-      bottom: 95px;
-      right: 25px;
-      width: 380px;
-      max-width: calc(100vw - 40px);
-      height: 520px;
-      max-height: calc(100vh - 120px);
-      background: #ffffff;
-      border-radius: 20px;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+      bottom: 82px;
+      left: 20px;
+      width: 340px;
+      max-width: calc(100vw - 32px);
+      height: 460px;
+      max-height: calc(100vh - 100px);
+      background: var(--ai-bg);
+      border-radius: var(--ai-radius);
+      box-shadow: var(--ai-shadow);
       flex-direction: column;
       overflow: hidden;
-      border: 1px solid #e5e7eb;
-      animation: aiSlideUp 0.3s ease-out forwards;
+      border: 1px solid var(--ai-bot-msg-border);
+      transform-origin: bottom left;
+      animation: aiPopIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    @keyframes aiSlideUp {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
+
+    @keyframes aiPopIn {
+      0% {
+        opacity: 0;
+        transform: scale(0.92) translateY(12px);
+      }
+      100% {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+      }
     }
+
     .ai-chat-header {
-      background: linear-gradient(135deg, #1e293b, #0f172a);
-      color: #ffffff;
-      padding: 16px 20px;
+      background: var(--ai-header-bg);
+      color: var(--ai-header-text);
+      padding: 14px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
     }
-    .ai-chat-header h3 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 600;
+
+    .ai-chat-header-info {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
-    .ai-chat-header .status-dot {
-      width: 8px;
-      height: 8px;
+
+    .ai-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .ai-chat-header h3 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+    }
+
+    .ai-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
       background-color: #22c55e;
       border-radius: 50%;
       display: inline-block;
     }
+
     .ai-close-btn {
       background: transparent;
       border: none;
       color: #94a3b8;
       cursor: pointer;
-      font-size: 20px;
-      line-height: 1;
+      font-size: 18px;
       padding: 4px;
-      transition: color 0.2s;
+      border-radius: 6px;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
-    .ai-close-btn:hover { color: #ffffff; }
+
+    .ai-close-btn:hover {
+      color: #ffffff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
     .ai-chat-messages {
       flex: 1;
-      padding: 16px;
+      padding: 14px;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 12px;
-      background-color: #f8fafc;
+      gap: 10px;
+      background-color: var(--ai-chat-bg);
     }
+
     .ai-message {
       max-width: 85%;
-      padding: 12px 16px;
-      border-radius: 16px;
-      font-size: 14px;
-      line-height: 1.6;
+      padding: 10px 14px;
+      border-radius: 14px;
+      font-size: 13.5px;
+      line-height: 1.5;
       word-break: break-word;
     }
+
     .ai-message-user {
       align-self: flex-end;
-      background-color: #2563eb;
-      color: #ffffff;
-      border-bottom-left-radius: 4px;
+      background-color: var(--ai-user-msg-bg);
+      color: var(--ai-user-msg-text);
+      border-bottom-right-radius: 4px;
     }
+
     .ai-message-bot {
       align-self: flex-start;
-      background-color: #ffffff;
-      color: #1e293b;
-      border: 1px solid #e2e8f0;
-      border-bottom-right-radius: 4px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+      background-color: var(--ai-bot-msg-bg);
+      color: var(--ai-bot-msg-text);
+      border: 1px solid var(--ai-bot-msg-border);
+      border-bottom-left-radius: 4px;
     }
+
     .ai-sources {
       margin-top: 8px;
       padding-top: 8px;
-      border-top: 1px solid #e2e8f0;
-      font-size: 12px;
+      border-top: 1px solid var(--ai-bot-msg-border);
+      font-size: 11.5px;
     }
+
+    .ai-sources strong {
+      display: block;
+      color: var(--ai-text-muted);
+      margin-bottom: 4px;
+    }
+
     .ai-sources a {
-      color: #2563eb;
+      color: #3b82f6;
       text-decoration: none;
       display: block;
-      margin-top: 4px;
+      margin-top: 3px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      transition: opacity 0.2s;
     }
-    .ai-sources a:hover { text-decoration: underline; }
+
+    .ai-sources a:hover {
+      text-decoration: underline;
+    }
+
     .ai-chat-input-area {
-      padding: 12px 16px;
-      background: #ffffff;
-      border-top: 1px solid #e2e8f0;
+      padding: 10px 12px;
+      background: var(--ai-bg);
+      border-top: 1px solid var(--ai-bot-msg-border);
       display: flex;
       gap: 8px;
+      align-items: center;
     }
+
     .ai-chat-input {
       flex: 1;
-      border: 1px solid #cbd5e1;
-      border-radius: 12px;
-      padding: 10px 14px;
-      font-size: 14px;
+      background: var(--ai-input-bg);
+      color: var(--ai-input-text);
+      border: 1px solid var(--ai-input-border);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
       outline: none;
       transition: border-color 0.2s;
-      direction: rtl;
+      direction: ltr;
     }
-    .ai-chat-input:focus { border-color: #2563eb; }
+
+    .ai-chat-input:focus {
+      border-color: var(--ai-input-focus);
+    }
+
     .ai-send-btn {
       background: #2563eb;
       color: white;
       border: none;
-      border-radius: 12px;
-      padding: 0 16px;
+      border-radius: 10px;
+      width: 36px;
+      height: 36px;
       cursor: pointer;
       transition: background 0.2s;
       display: flex;
       align-items: center;
       justify-content: center;
+      flex-shrink: 0;
     }
-    .ai-send-btn:hover { background: #1d4ed8; }
+
+    .ai-send-btn:hover {
+      background: #1d4ed8;
+    }
+
     .ai-typing {
       display: flex;
       gap: 4px;
       align-items: center;
       padding: 8px 12px;
     }
+
     .ai-typing span {
-      width: 6px;
-      height: 6px;
-      background: #94a3b8;
+      width: 5px;
+      height: 5px;
+      background: var(--ai-text-muted);
       border-radius: 50%;
       animation: aiBounce 1.4s infinite ease-in-out both;
     }
+
     .ai-typing span:nth-child(1) { animation-delay: -0.32s; }
     .ai-typing span:nth-child(2) { animation-delay: -0.16s; }
+
     @keyframes aiBounce {
       0%, 80%, 100% { transform: scale(0); }
       40% { transform: scale(1); }
     }
   `;
 
-  // 3. إضافة المكونات للأنماط ولصفحة المودال
+  // 3. Inject Styles & HTML Structure
   const styleSheet = document.createElement("style");
   styleSheet.type = "text/css";
   styleSheet.innerText = styles;
@@ -193,25 +325,31 @@
   const widgetContainer = document.createElement("div");
   widgetContainer.id = "ai-chat-widget";
   widgetContainer.innerHTML = `
-    <button id="ai-chat-button" aria-label="مساعد الذكاء الاصطناعي">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <button id="ai-chat-button" aria-label="AI Assistant">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
       </svg>
     </button>
     <div id="ai-chat-window">
       <div class="ai-chat-header">
-        <h3><span class="status-dot"></span> مساعد e-MarketingReviews</h3>
-        <button class="ai-close-btn" id="ai-close-btn">&times;</button>
+        <div class="ai-chat-header-info">
+          <div class="ai-avatar">⚡</div>
+          <div>
+            <h3>e-MarketingReviews AI</h3>
+            <div class="ai-status"><span class="status-dot"></span> Online Assistant</div>
+          </div>
+        </div>
+        <button class="ai-close-btn" id="ai-close-btn" aria-label="Close">&times;</button>
       </div>
       <div class="ai-chat-messages" id="ai-messages">
         <div class="ai-message ai-message-bot">
-          مرحباً بك! 👋 أنا المساعد الذكي لموقع e-MarketingReviews. كيف يمكنني مساعدتك اليوم في اختيار أداة التسويق أو الذكاء الاصطناعي المناسبة لك؟
+          Hello! 👋 I'm your AI assistant for e-MarketingReviews. How can I help you find the best marketing & AI tools today?
         </div>
       </div>
       <div class="ai-chat-input-area">
-        <input type="text" class="ai-chat-input" id="ai-input" placeholder="اكتب سؤالك هنا..." />
-        <button class="ai-send-btn" id="ai-send">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <input type="text" class="ai-chat-input" id="ai-input" placeholder="Type your message..." />
+        <button class="ai-send-btn" id="ai-send" aria-label="Send">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="22" y1="2" x2="11" y2="13"></line>
             <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
           </svg>
@@ -222,7 +360,7 @@
 
   document.body.appendChild(widgetContainer);
 
-  // 4. عناصر التهيئة والتحكم
+  // 4. Dom Elements & Logic Setup
   const chatButton = document.getElementById("ai-chat-button");
   const chatWindow = document.getElementById("ai-chat-window");
   const closeButton = document.getElementById("ai-close-btn");
@@ -230,16 +368,18 @@
   const inputField = document.getElementById("ai-input");
   const messagesContainer = document.getElementById("ai-messages");
 
-  // فتح وإغلاق النافذة
+  // Toggle Window Visibility
   chatButton.addEventListener("click", () => {
-    chatWindow.style.display = chatWindow.style.display === "flex" ? "none" : "flex";
+    const isVisible = chatWindow.style.display === "flex";
+    chatWindow.style.display = isVisible ? "none" : "flex";
+    if (!isVisible) inputField.focus();
   });
 
   closeButton.addEventListener("click", () => {
     chatWindow.style.display = "none";
   });
 
-  // إضافة رسالة
+  // Append Messages
   function appendMessage(text, sender, sources = []) {
     const msgDiv = document.createElement("div");
     msgDiv.classList.add("ai-message", sender === "user" ? "ai-message-user" : "ai-message-bot");
@@ -248,8 +388,8 @@
     if (sources && sources.length > 0 && sender === "bot") {
       const sourcesDiv = document.createElement("div");
       sourcesDiv.classList.add("ai-sources");
-      sourcesDiv.innerHTML = "<strong>المراجع الموصى بها:</strong>";
-      sources.forEach(src => {
+      sourcesDiv.innerHTML = "<strong>Recommended Articles:</strong>";
+      sources.forEach((src) => {
         const a = document.createElement("a");
         a.href = src.url;
         a.target = "_blank";
@@ -263,7 +403,7 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   }
 
-  // إظهار مؤشر التفكير
+  // Typing Indicator
   function showTypingIndicator() {
     const typingDiv = document.createElement("div");
     typingDiv.id = "ai-typing-indicator";
@@ -278,7 +418,7 @@
     if (typingDiv) typingDiv.remove();
   }
 
-  // إرسال الرسالة إلى الـ API
+  // Handle Send Event
   async function sendMessage() {
     const text = inputField.value.trim();
     if (!text) return;
@@ -297,14 +437,14 @@
       hideTypingIndicator();
 
       if (!response.ok) {
-        throw new Error("حدث خطأ في الاتصال بالحرف");
+        throw new Error("Failed to get response");
       }
 
       const data = await response.json();
       appendMessage(data.reply, "bot", data.sources);
     } catch (err) {
       hideTypingIndicator();
-      appendMessage("عذراً، حدث خطأ أثناء جلب الإجابة. يرجى المحاولة لاحقاً.", "bot");
+      appendMessage("Sorry, an error occurred while connecting. Please try again later.", "bot");
     }
   }
 
