@@ -1,0 +1,36 @@
+name: Auto Update Knowledge Base
+
+on:
+  schedule:
+    # يعمل تلقائياً يومياً الساعة 12 منتصف الليل
+    - cron: '0 0 * * *'
+  # يتيح لك تشغيله يدوياً بنقرة زر من GitHub في أي وقت
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. جلب أحدث كود من المستودع
+        uses: actions/checkout@v4
+
+      - name: 2. إعداد بيئة Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 3. تثبيت المكتبات المطلوبة
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 4. تشغيل سكريبت الزحف والمشف
+        run: python scraper.py
+
+      - name: 5. حفظ وحفظ التغييرات تلقائياً في GitHub
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data/knowledge_base.json
+          git diff --quiet && git diff --staged --quiet || (git commit -m "🤖 تحديث تلقائي لذاكرة الذكاء الاصطناعي" && git push)
