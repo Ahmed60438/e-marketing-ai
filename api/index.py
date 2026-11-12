@@ -546,6 +546,34 @@ def _convert_markdown_tables_to_cards(text: str) -> str:
     return "\n".join(out).strip()
 
 
+def _extract_dynamic_topics(text: str, user_query: str) -> List[str]:
+    candidates: List[str] = []
+    generic_skip = {
+        "executive summary", "key takeaways", "action steps", "practical action steps",
+        "overview", "summary", "conclusion", "introduction", "pros", "cons",
+        "best for", "pricing", "key features", "main takeaways", "next steps",
+        "recommended reading", "sources", "item", "detail 1", "detail 2", "detail 3",
+        "ملخص تنفيذي", "أهم النقاط", "خطوات عملية", "الخلاصة", "مقدمة", "المميزات", "العيوب",
+    }
+    for m in re.finditer(r"^#{1,4}\s+(.+)$", text, flags=re.MULTILINE):
+        h = re.sub(r"[*`#_~]", "", m.group(1)).strip(" :-•")
+        if 4 <= len(h) <= 48 and h.lower() not in generic_skip and h not in candidates:
+            candidates.append(h)
+    for m in re.finditer(r"\*\*([^*]{4,44})\*\*", text):
+        b = m.group(1).strip(" :-•.")
+        if 4 <= len(b) <= 44 and b.lower() not in generic_skip and b not in candidates:
+            candidates.append(b)
+    q_clean = re.sub(
+        r"^(what\s+is|what\s+are|how\s+to|how\s+do\s+i|how\s+does|can\s+you|explain|compare|summarize|ما\s+هو|ما\s+هي|كيف\s+يمكنني|كيف|اشرح|قارن|لخص)\s+",
+        "",
+        user_query.strip(),
+        flags=re.IGNORECASE,
+    ).strip(" ?!؟.")
+    if 4 <= len(q_clean) <= 50 and q_clean not in candidates:
+        candidates.append(q_clean)
+    return candidates[:6]
+
+
 def _clean_and_extract_followups(raw_text: str, user_query: str) -> Tuple[str, List[str]]:
     cleaned = THINK_BLOCK_RE.sub("", raw_text or "").strip()
     follow_ups: List[str] = []
@@ -555,26 +583,33 @@ def _clean_and_extract_followups(raw_text: str, user_query: str) -> Tuple[str, L
         raw_items = match.group(1).split("|")
         for item in raw_items:
             q = item.strip().strip("-•*\"'` ")
-            if 4 <= len(q) <= 75 and q not in follow_ups:
+            if 6 <= len(q) <= 85 and q not in follow_ups:
                 follow_ups.append(q)
         cleaned = FOLLOWUP_LINE_RE.sub("", cleaned).strip()
 
     cleaned = _convert_markdown_tables_to_cards(cleaned)
 
-    if not follow_ups:
-        is_arabic = bool(re.search(r"[\u0600-\u06FF]", user_query))
+    if len(follow_ups) < 3:
+        is_arabic = bool(re.search(r"[\u0600-\u06FF]", user_query + " " + cleaned))
+        topics = _extract_dynamic_topics(cleaned, user_query)
         if is_arabic:
-            follow_ups = [
-                "أفضل أدوات السيو بالذكاء الاصطناعي؟",
-                "كيف أحسن تصدر مقالاتي في محركات البحث؟",
-                "استراتيجية البحث عن الكلمات المفتاحية",
+            templates = [
+                lambda t: f"كيف أطبق {t} عملياً خطوة بخطوة؟",
+                lambda t: f"ما أشهر الأخطاء عند تطبيق {t} وكيف أتجنبها؟",
+                lambda t: f"ما أفضل الأدوات لقياس وتحسين {t}؟",
             ]
         else:
-            follow_ups = [
-                "Compare top AI SEO tools",
-                "How to optimize for AI search (GEO)?",
-                "Best keyword clustering strategy",
+            templates = [
+                lambda t: f"How do I implement {t} step by step?",
+                lambda t: f"What common mistakes should I avoid with {t}?",
+                lambda t: f"Which metrics or tools best measure {t}?",
             ]
+        for idx, topic in enumerate(topics):
+            if len(follow_ups) >= 3:
+                break
+            candidate = templates[idx % len(templates)](topic)
+            if candidate not in follow_ups:
+                follow_ups.append(candidate)
 
     return cleaned, follow_ups[:3]
 

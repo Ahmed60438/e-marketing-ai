@@ -1,7 +1,8 @@
 (function () {
   "use strict";
 
-  if (window.__EMR_AI_WIDGET_V60__) return;
+  if (window.__EMR_AI_WIDGET_V70__) return;
+  window.__EMR_AI_WIDGET_V70__ = true;
   window.__EMR_AI_WIDGET_V60__ = true;
   window.__EMR_AI_WIDGET_V50__ = true;
   window.__EMR_AI_WIDGET_LOADED__ = true;
@@ -514,22 +515,22 @@
       ".launcher{width:48px;height:48px}",
       ".launcher svg{width:23px;height:23px}",
       ".launcherDot{width:10.5px;height:10.5px;right:1px;top:1px}",
-      ".panel,.panel.is-wide,:host([data-position=right]) .panel{position:fixed;left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));width:auto;height:min(510px,calc(100dvh - 82px));max-height:calc(100dvh - 82px);border-radius:20px}",
-      ".header{min-height:54px;padding:10px 11px 10px 13px;gap:9px}",
-      ".brandMark{width:33px;height:33px;border-radius:10px}",
-      ".brandMark svg{width:18px;height:18px}",
-      ".brandTitle{font-size:13px}",
-      ".status{font-size:10.5px;margin-top:1px}",
+      ".panel,.panel.is-wide,:host([data-position=right]) .panel{position:fixed;inset:0;top:0;right:0;bottom:0;left:0;width:100vw;max-width:100%;height:100dvh;max-height:100dvh;margin:0;border:0;border-radius:0;box-shadow:none}",
+      ".header{min-height:60px;padding:max(12px,env(safe-area-inset-top)) 14px 12px 16px;gap:10px}",
+      ".brandMark{width:35px;height:35px;border-radius:11px}",
+      ".brandMark svg{width:19px;height:19px}",
+      ".brandTitle{font-size:13.5px}",
+      ".status{font-size:11px;margin-top:1px}",
       ".expandBtn{display:none}",
-      ".messages{padding:11px 10px}",
-      ".welcome{padding:11px;margin-bottom:10px;border-radius:14px}",
-      ".welcomeTitle{font-size:13px}",
-      ".welcome p{font-size:11.5px;line-height:1.45}",
-      ".prompts{gap:5px;margin-top:8px}",
-      ".prompt{padding:5.5px 10px;font-size:11px}",
-      ".bubble{font-size:12.5px;padding:10px 11px}",
-      ".composer{padding:8px 10px max(8px,env(safe-area-inset-bottom))}",
-      "textarea{font-size:16px;height:32px;padding:4px 0}",
+      ".messages{padding:14px 12px}",
+      ".welcome{padding:13px;margin-bottom:12px;border-radius:15px}",
+      ".welcomeTitle{font-size:13.5px}",
+      ".welcome p{font-size:12px;line-height:1.5}",
+      ".prompts{gap:6px;margin-top:9px}",
+      ".prompt{padding:6px 11px;font-size:11.5px}",
+      ".bubble{font-size:13px;padding:11px 13px}",
+      ".composer{padding:10px 12px max(12px,env(safe-area-inset-bottom))}",
+      "textarea{font-size:16px;height:34px;padding:5px 0}",
       ".hintDesktop{display:none}",
       ".hintMobile{display:inline}",
       "}",
@@ -1320,9 +1321,199 @@
       return row;
     }
 
-    // Live Progressive Typewriter Streaming with smooth line-by-line auto-scroll
+    const usedFollowUpQuestions = new Set();
+    let followupRotationIndex = 0;
+
+    function normalizeQuestionKey(str) {
+      return String(str || "")
+        .toLowerCase()
+        .replace(/[^\w\u0600-\u06FF]+/g, " ")
+        .trim();
+    }
+
+    function isStaticBoilerplateFollowUp(q) {
+      const norm = normalizeQuestionKey(q);
+      if (!norm || norm.length < 6) return true;
+      const staticPatterns = [
+        "compare top ai seo tools",
+        "how to optimize for ai search",
+        "best keyword clustering strategy",
+        "how can i apply these seo steps",
+        "what are the best free tools for this",
+        "can you give me a step by step checklist",
+        "what other guides on e marketing reviews",
+        "summarize this page",
+        "compare ai seo tools",
+        "entity keyword clustering",
+        "geo vs traditional seo",
+        "أفضل أدوات السيو بالذكاء الاصطناعي",
+        "كيف أحسن تصدر مقالاتي في محركات البحث",
+        "استراتيجية البحث عن الكلمات المفتاحية",
+        "ما أهم النقاط العملية التي يمكن تطبيقها",
+        "ما الأدوات المجانية المناسبة لهذا الموضوع",
+        "اعطني خطة عمل خطوة بخطوة"
+      ];
+      return staticPatterns.some(function (pat) {
+        return norm.indexOf(pat) !== -1 || pat.indexOf(norm) !== -1;
+      });
+    }
+
+    function cleanTopicPhrase(raw) {
+      return String(raw || "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/[*`#_~>|]/g, "")
+        .replace(/^\d+[.)]\s*/, "")
+        .replace(/^[-•:]\s*/, "")
+        .replace(/[:.،,؛;!?؟]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function extractContextualTopics(userQuestion, botReply, sources) {
+      const topics = [];
+      const seenTopics = new Set();
+      const skipGeneric = new Set([
+        "executive summary", "key takeaways", "action steps", "practical action steps",
+        "overview", "summary", "conclusion", "introduction", "pros", "cons",
+        "best for", "pricing", "key features", "main takeaways", "next steps",
+        "recommended reading", "sources", "item", "detail 1", "detail 2", "detail 3",
+        "feature", "tool", "strategy", "method", "comparison", "guide", "result",
+        "ملخص تنفيذي", "أهم النقاط", "خطوات عملية", "الخلاصة", "مقدمة", "المميزات", "العيوب", "النتيجة"
+      ]);
+
+      function addTopic(candidate) {
+        const cleaned = cleanTopicPhrase(candidate);
+        if (!cleaned || cleaned.length < 4 || cleaned.length > 48) return;
+        const key = normalizeQuestionKey(cleaned);
+        if (!key || skipGeneric.has(key) || seenTopics.has(key)) return;
+        if (/^(step|point|tip|part|section|خطوة|نقطة|أولاً|ثانياً|ثالثاً)\b/i.test(cleaned)) return;
+        seenTopics.add(key);
+        topics.push(cleaned);
+      }
+
+      const cleanUserQ = String(userQuestion || "")
+        .replace(/\[Current Article Context[\s\S]*$/i, "")
+        .replace(
+          /^(what\s+is|what\s+are|how\s+to|how\s+do\s+i|how\s+can\s+i|how\s+does|can\s+you|please|explain|compare|summarize|tell\s+me\s+about|ما\s+هو|ما\s+هي|كيف\s+يمكنني|كيف\s+أقوم|كيف|اشرح\s+لي|اشرح|قارن\s+بين|قارن|لخص|حدثني\s+عن)\s+/i,
+          ""
+        )
+        .replace(/[?؟.!]+$/g, "")
+        .trim();
+      if (
+        cleanUserQ &&
+        cleanUserQ.length >= 4 &&
+        cleanUserQ.length <= 46 &&
+        !/^(this\s+(page|article|post)|هذه\s+الصفحة|هذا\s+المقال)/i.test(cleanUserQ)
+      ) {
+        addTopic(cleanUserQ);
+      }
+
+      const replyLines = String(botReply || "").split("\n");
+      replyLines.forEach(function (line) {
+        const hMatch = line.trim().match(/^#{1,4}\s+(.+)$/);
+        if (hMatch) addTopic(hMatch[1]);
+      });
+
+      const boldRegex = /\*\*([^*]{4,45})\*\*/g;
+      let bMatch;
+      while ((bMatch = boldRegex.exec(String(botReply || ""))) !== null) {
+        addTopic(bMatch[1]);
+      }
+
+      if (Array.isArray(sources)) {
+        sources.forEach(function (src) {
+          if (src && src.title) {
+            const shortTitle = String(src.title).split(/[:|–—-]/)[0].trim();
+            addTopic(shortTitle);
+          }
+        });
+      }
+
+      if (!topics.length && currentContext && currentContext.title) {
+        addTopic(String(currentContext.title).split(/[:|–—-]/)[0].trim());
+      }
+
+      return topics.slice(0, 8);
+    }
+
+    function buildDynamicFollowUps(userQuestion, botReply, sources, serverFollowUps) {
+      usedFollowUpQuestions.add(normalizeQuestionKey(userQuestion));
+      const results = [];
+      const isArabic = /[\u0600-\u06FF]/.test(
+        String(userQuestion || "") + " " + String(botReply || "").slice(0, 400)
+      );
+
+      function tryAddFollowUp(q) {
+        const cleaned = String(q || "")
+          .replace(/^[↳•\-*\d.)\s]+/, "")
+          .replace(/["'`]/g, "")
+          .trim();
+        if (!cleaned || cleaned.length < 8 || cleaned.length > 88) return false;
+        const key = normalizeQuestionKey(cleaned);
+        if (!key || usedFollowUpQuestions.has(key) || isStaticBoilerplateFollowUp(cleaned)) {
+          return false;
+        }
+        usedFollowUpQuestions.add(key);
+        results.push(cleaned);
+        return true;
+      }
+
+      const inlineFollowMatch = String(botReply || "").match(
+        /(?:^|\n)\s*(?:\*\*)?FOLLOW_UPS(?:\*\*)?\s*:\s*(.+)$/i
+      );
+      if (inlineFollowMatch && inlineFollowMatch[1]) {
+        inlineFollowMatch[1].split("|").forEach(function (item) {
+          if (results.length < 3) tryAddFollowUp(item);
+        });
+      }
+
+      if (Array.isArray(serverFollowUps)) {
+        serverFollowUps.forEach(function (item) {
+          if (results.length < 3) tryAddFollowUp(item);
+        });
+      }
+
+      const topics = extractContextualTopics(userQuestion, botReply, sources);
+      const arBuilders = [
+        function (t) { return "كيف أطبق " + t + " عملياً خطوة بخطوة؟"; },
+        function (t) { return "ما الأخطاء الشائعة عند تنفيذ " + t + " وكيف أتجنبها؟"; },
+        function (t) { return "ما أفضل الأدوات والمقاييس لتقييم نتائج " + t + "؟"; },
+        function (t) { return "كيف يؤثر " + t + " على زيادة الزيارات ومعدل التحويل؟"; },
+        function (t) { return "ما الفرق العملي بين " + t + " والطرق التقليدية؟"; },
+        function (t) { return "ما خطة العمل السريعة للبدء في " + t + " هذا الأسبوع؟"; }
+      ];
+      const enBuilders = [
+        function (t) { return "How do I implement " + t + " step by step?"; },
+        function (t) { return "What common mistakes should I avoid with " + t + "?"; },
+        function (t) { return "Which metrics and tools best measure " + t + " performance?"; },
+        function (t) { return "How does " + t + " impact organic traffic and conversions?"; },
+        function (t) { return "What is an advanced workflow to scale " + t + "?"; },
+        function (t) { return "How can I audit my current setup for " + t + "?"; }
+      ];
+      const builders = isArabic ? arBuilders : enBuilders;
+
+      for (let i = 0; i < topics.length && results.length < 3; i += 1) {
+        const builder = builders[(followupRotationIndex + i) % builders.length];
+        tryAddFollowUp(builder(topics[i]));
+      }
+      followupRotationIndex += 2;
+
+      if (results.length < 3 && topics.length > 0) {
+        const primaryTopic = topics[0];
+        for (let b = 0; b < builders.length && results.length < 3; b += 1) {
+          tryAddFollowUp(builders[b](primaryTopic));
+        }
+      }
+
+      return results.slice(0, 3);
+    }
+
+    // Live Progressive Typewriter Streaming WITHOUT forced auto-scrolling down
     function streamBotMessage(fullText, sources, followUps) {
       return new Promise(function (resolve) {
+        const cleanedFullText = String(fullText || "")
+          .replace(/(?:^|\n)\s*(?:\*\*)?FOLLOW_UPS(?:\*\*)?\s*:\s*.+$/gi, "")
+          .trim();
         const row = document.createElement("div");
         row.className = "row bot";
         const wrap = document.createElement("div");
@@ -1333,11 +1524,10 @@
         row.appendChild(wrap);
         messages.appendChild(row);
 
-        const tokens = String(fullText || "").match(/\S+\s*|\n+/g) || [
-          String(fullText || "")
+        const tokens = String(cleanedFullText || "").match(/\S+\s*|\n+/g) || [
+          String(cleanedFullText || "")
         ];
         const totalTokens = tokens.length;
-        // Adaptive words-per-tick so user watches every word and line type out smoothly in real time
         const step = totalTokens > 260 ? 3 : totalTokens > 130 ? 2 : 1;
         let idx = 0;
         let shownText = "";
@@ -1350,8 +1540,8 @@
           if (timerId) window.clearInterval(timerId);
           activeStreamStop = null;
           const finalContent = cancelled
-            ? (shownText.trim() || fullText)
-            : fullText;
+            ? (shownText.trim() || cleanedFullText)
+            : cleanedFullText;
           renderText(bubble, finalContent, false);
           attachBotExtras(
             row,
@@ -1361,9 +1551,6 @@
             cancelled ? [] : sources,
             cancelled ? [] : followUps
           );
-          if (!userScrolledUp) {
-            scrollToBottom(false);
-          }
           resolve(finalContent);
         }
 
@@ -1371,9 +1558,8 @@
           finishStream(true);
         };
 
-        // Render initial cursor frame immediately
+        // Render initial cursor frame immediately without scrolling down
         renderText(bubble, "", true);
-        scrollToBottom(false);
 
         timerId = window.setInterval(function () {
           if (finished) return;
@@ -1388,10 +1574,8 @@
             return;
           }
 
+          // Do not auto-scroll down while typing so the user can read comfortably from the top
           renderText(bubble, shownText, true);
-          if (!userScrolledUp) {
-            messages.scrollTop = messages.scrollHeight;
-          }
         }, 22);
       });
     }
@@ -1425,7 +1609,6 @@
       row.innerHTML =
         '<div class="messageWrap"><div class="bubble typing" aria-label="Assistant is thinking"><i></i><i></i><i></i></div></div>';
       messages.appendChild(row);
-      scrollToBottom(true);
     }
 
     function hideTyping() {
@@ -1575,7 +1758,10 @@
       messages.querySelectorAll(".followups").forEach(function (el) {
         el.remove();
       });
-      appendMessage(shownUserText, "user", [], []);
+      const userRow = appendMessage(shownUserText, "user", [], [], false);
+      if (userRow && userRow.scrollIntoView) {
+        userRow.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
       conversation.push({ role: "user", content: shownUserText });
       saveSession();
       showTyping();
@@ -1584,7 +1770,12 @@
         const data = await requestAnswer(text, history);
         hideTyping();
         const sources = data.sources || [];
-        const followUps = data.follow_ups || [];
+        const followUps = buildDynamicFollowUps(
+          shownUserText,
+          data.reply,
+          sources,
+          data.follow_ups || []
+        );
         const streamedText = await streamBotMessage(
           data.reply,
           sources,
@@ -1662,6 +1853,7 @@
         window.speechSynthesis.cancel();
       }
       conversation.length = 0;
+      usedFollowUpQuestions.clear();
       try {
         window.sessionStorage.removeItem(STORAGE_KEY);
       } catch (e) {}
